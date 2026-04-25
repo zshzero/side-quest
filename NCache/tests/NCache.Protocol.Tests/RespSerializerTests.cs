@@ -291,6 +291,27 @@ public class RespSerializerTests
     }
 
     [Fact]
+    public void RoundTrip_BulkStringWithArbitraryBinaryBytes_PreservesExactBytes()
+    {
+        // Proves binary safety isn't just a code claim: round-trip actual binary data
+        // including null bytes, high-bit bytes, and CR/LF embedded inside the payload.
+        // If the length-prefix contract is honored end to end, every byte survives.
+        var original = new RespValue.BulkString(new byte[]
+        {
+            0x00, 0xFF, 0x7F, 0x80, 0x01,
+            (byte)'\r', (byte)'\n',   // CRLF mid-payload — must NOT terminate the value
+            0xDE, 0xAD, 0xBE, 0xEF,
+            0x00,                      // trailing null byte
+        });
+
+        var bytes = SerializeToBuffer(original);
+
+        Assert.True(RespParser.TryParse(ref bytes, out var parsed));
+        var bulk = Assert.IsType<RespValue.BulkString>(parsed);
+        Assert.Equal(original.Data, bulk.Data);
+    }
+
+    [Fact]
     public void RoundTrip_ComplexArray_SurvivesSerializeAndParse()
     {
         var original = new RespValue.Array(new RespValue[]
