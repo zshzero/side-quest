@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Driftworld.Core\Driftworld.Core.csproj" />
+    <ProjectReference Include="..\Driftworld.Data\Driftworld.Data.csproj" />
+  </ItemGroup>
+
+</Project>

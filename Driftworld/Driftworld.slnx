@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Driftworld.Api/Driftworld.Api.csproj" />
+    <Project Path="src/Driftworld.Core/Driftworld.Core.csproj" />
+    <Project Path="src/Driftworld.Data/Driftworld.Data.csproj" />
+    <Project Path="src/Driftworld.Worker/Driftworld.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Driftworld.Api.Tests/Driftworld.Api.Tests.csproj" />
+    <Project Path="tests/Driftworld.Core.Tests/Driftworld.Core.Tests.csproj" />
+    <Project Path="tests/Driftworld.Data.Tests/Driftworld.Data.Tests.csproj" />
+    <Project Path="tests/Driftworld.Worker.Tests/Driftworld.Worker.Tests.csproj" />
+  </Folder>
+</Solution>
