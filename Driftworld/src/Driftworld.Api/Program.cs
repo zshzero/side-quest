@@ -1,3 +1,5 @@
+using Driftworld.Api;
+using Driftworld.Api.Endpoints;
 using Driftworld.Core;
 using Driftworld.Data;
 using Driftworld.Data.Seeding;
@@ -6,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDriftworldData(builder.Configuration);
+builder.Services.AddDriftworldApi();
 builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services
@@ -29,12 +32,18 @@ if (args.Contains("--seed"))
     return;
 }
 
+app.UseExceptionHandler();
+
 app.MapGet("/", () => Results.Ok(new
 {
     service = "Driftworld",
-    phase = 1,
-    status = "skeleton — endpoints land in Phase 2",
+    phase = 2,
+    status = "users + decisions endpoints",
 }));
+
+var v1 = app.MapGroup("/v1");
+v1.MapUsersEndpoints();
+v1.MapDecisionsEndpoints();
 
 app.Run();
 
