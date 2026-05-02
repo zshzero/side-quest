@@ -129,6 +129,66 @@ Errors:
 - `409 duplicate` — same user already decided in this cycle (`extensions.cycle_id` set)
 - `503 no_open_cycle` — should never happen in normal operation; means the cycle-close worker has failed
 
+### `GET /v1/world/current`
+
+Latest closed-cycle world state, plus open-cycle metadata, plus events currently active (rules whose threshold still holds).
+
+```bash
+curl http://localhost:5059/v1/world/current
+# {
+#   "cycle":  { "id": 3, "startsAt": "...", "endsAt": "...", "status": "open" },
+#   "state":  { "economy": 19, "environment": 50, "stability": 50, "asOfCycleId": 2 },
+#   "activeEvents": [{ "type": "recession", "sinceCycleId": 2 }]
+# }
+```
+
+`activeEvents` is computed by re-evaluating every rule against the latest closed state at read time. `sinceCycleId` is the earliest cycle (walking backward) where the rule was continuously holding.
+
+### `GET /v1/world/history?limit=N`
+
+Recent closed-cycle states, descending by `cycleId`. Default limit 30, max 365.
+
+```bash
+curl 'http://localhost:5059/v1/world/history?limit=10'
+# { "items": [ { "cycleId": 3, "economy": 19, ... }, ... ] }
+```
+
+Errors:
+- `400 invalid_limit` — `limit` outside `[1, 365]`
+
+### `GET /v1/events`
+
+Triggered events. **Either** `cycle_id` or `limit`, not both. Default limit 30, max 200.
+
+```bash
+curl 'http://localhost:5059/v1/events?cycle_id=2'
+curl 'http://localhost:5059/v1/events?limit=20'
+# { "items": [ { "cycleId": 2, "type": "recession", "payload": { ... }, "createdAt": "..." } ] }
+```
+
+Errors:
+- `400 conflicting_filters` — both `cycle_id` and `limit` supplied
+- `400 invalid_limit` — `limit` outside `[1, 200]`
+
+### `GET /v1/users/{id}/contribution`
+
+Per-user totals + alignment with the modal choice across cycles.
+
+```bash
+curl http://localhost:5059/v1/users/.../contribution
+# {
+#   "userId": "...",
+#   "totalDecisions": 17,
+#   "byChoice": { "build": 9, "preserve": 5, "stabilize": 3 },
+#   "alignment": { "withMajorityPct": 64 }
+# }
+```
+
+`alignment.withMajorityPct` is the % of cycles in which the user's choice matched the modal choice across all decisions in that cycle. Ties are broken alphabetically. Public — no `X-User-Id` required (id is in the path).
+
+Errors:
+- `401 unknown_user` — no user with that id
+
 ## Configuration
 
 All world parameters live in `src/Driftworld.Api/appsettings.json` under `Driftworld:World`:
@@ -157,5 +217,5 @@ Local dev with the bundled compose file needs no override.
 | 1.5 — Reviewer-driven punch-list      | ✅ done   | (folded into Phase 1 doc + tests) |
 | 2 — Users & decisions endpoints       | ✅ done   | [phase-2-users-and-decisions.md](docs/phase-2-users-and-decisions.md) |
 | 3 — Cycle-close worker (manual)       | ✅ done   | [phase-3-cycle-close-worker.md](docs/phase-3-cycle-close-worker.md) |
-| 4 — Events & read endpoints           | ⬜ next   | not started |
-| 5 — Scheduling, polish, hand-off      | ⬜       | not started |
+| 4 — Events & read endpoints           | ✅ done   | [phase-4-events-and-reads.md](docs/phase-4-events-and-reads.md) |
+| 5 — Scheduling, polish, hand-off      | ⬜ next  | not started |

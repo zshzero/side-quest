@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Driftworld.Core;
 using Driftworld.Core.Aggregation;
+using Driftworld.Core.Rules;
 using Driftworld.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -79,6 +81,25 @@ public static class CycleCloser
         });
 
         await db.SaveChangesAsync(ct);
+
+        // Evaluate rules against the new state and persist any matches as events.
+        // ON CONFLICT DO NOTHING makes this idempotent against partial-failure replays.
+        var matchingRules = RuleEvaluator.EvaluateMatching(next, world);
+        foreach (var ruleName in matchingRules)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                economy = next.Economy,
+                environment = next.Environment,
+                stability = next.Stability,
+            });
+
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $@"INSERT INTO events (id, cycle_id, type, payload, created_at)
+                   VALUES ({Guid.NewGuid()}, {openCycle.Id}, {ruleName}, {payload}::jsonb, {closedAt})
+                   ON CONFLICT (cycle_id, type) DO NOTHING", ct);
+        }
+
         await tx.CommitAsync(ct);
         return openCycle.Id;
     }

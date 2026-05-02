@@ -30,6 +30,27 @@ public sealed class WorkerPostgresFixture : IAsyncLifetime
             ["preserve"]  = new ChoiceDelta { Economy = -1, Environment =  3, Stability =  0 },
             ["stabilize"] = new ChoiceDelta { Economy = -1, Environment =  0, Stability =  3 },
         },
+        Rules =
+        {
+            ["recession"] = new RuleOptions
+            {
+                Variable = WorldVariable.Economy,
+                Op = ComparisonOp.Lt,
+                Threshold = 20,
+            },
+            ["ecological_collapse"] = new RuleOptions
+            {
+                Variable = WorldVariable.Environment,
+                Op = ComparisonOp.Lt,
+                Threshold = 15,
+            },
+            ["unrest"] = new RuleOptions
+            {
+                Variable = WorldVariable.Stability,
+                Op = ComparisonOp.Lt,
+                Threshold = 20,
+            },
+        },
     };
 
     public async Task InitializeAsync()
@@ -66,6 +87,17 @@ public sealed class WorkerPostgresFixture : IAsyncLifetime
         var now = Clock.GetUtcNow().UtcDateTime;
         open.EndsAt = now - endsAtBefore;
         open.StartsAt = open.EndsAt.AddHours(-24);
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>Overwrite the genesis world_state's variables so the next close starts from a chosen baseline.</summary>
+    public async Task OverrideGenesisStateAsync(short economy, short environment, short stability)
+    {
+        await using var ctx = CreateContext();
+        var state = await ctx.WorldStates.OrderBy(s => s.CycleId).FirstAsync();
+        state.Economy = economy;
+        state.Environment = environment;
+        state.Stability = stability;
         await ctx.SaveChangesAsync();
     }
 

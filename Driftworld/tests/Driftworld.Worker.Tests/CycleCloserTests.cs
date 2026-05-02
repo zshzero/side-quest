@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Driftworld.Data.Cycles;
 using Driftworld.Data.Entities;
 using FluentAssertions;
@@ -146,6 +147,75 @@ public class CycleCloserTests
         // Each closed_at should equal that cycle's ends_at + 5min — NOT wall-clock now.
         foreach (var c in closed)
             c.ClosedAt.Should().Be(c.EndsAt.AddMinutes(5));
+    }
+
+    [Fact]
+    public async Task Driving_economy_below_20_writes_a_recession_event()
+    {
+        await _fx.ResetAndSeedAsync();
+        // Start from economy=21 so a single all-preserve cycle (mean=-1, K=2 → raw=19) crosses the recession threshold.
+        await _fx.OverrideGenesisStateAsync(economy: 21, environment: 50, stability: 50);
+        await _fx.BackdateOpenCycleAsync(endsAtBefore: TimeSpan.FromMinutes(10));
+        await _fx.SeedDecisionsForOpenCycleAsync(new[] { "preserve" });
+
+        await using var ctx = _fx.CreateContext();
+        await CycleCloser.RunAsync(ctx, _fx.World, _fx.Clock);
+
+        var newState = await ctx.WorldStates.SingleAsync(s => s.CycleId == 2);
+        newState.Economy.Should().Be(19); // 21 + 2*-1 = 19
+
+        var events = await ctx.Events.Where(e => e.CycleId == 2).ToListAsync();
+        events.Should().ContainSingle().Which.Type.Should().Be("recession");
+        var payload = JsonDocument.Parse(events[0].Payload).RootElement;
+        payload.GetProperty("economy").GetInt32().Should().Be(19);
+    }
+
+    [Fact]
+    public async Task Recovering_economy_does_not_emit_a_new_recession_event()
+    {
+        await _fx.ResetAndSeedAsync();
+        // Cycle 2: drop economy below 20 → recession.
+        await _fx.OverrideGenesisStateAsync(economy: 21, environment: 50, stability: 50);
+        await _fx.BackdateOpenCycleAsync(endsAtBefore: TimeSpan.FromMinutes(10));
+        await _fx.SeedDecisionsForOpenCycleAsync(new[] { "preserve" });
+
+        await using (var ctx = _fx.CreateContext())
+            await CycleCloser.RunAsync(ctx, _fx.World, _fx.Clock);
+
+        // Cycle 3: a build decision pushes economy back above 20.
+        await _fx.BackdateOpenCycleAsync(endsAtBefore: TimeSpan.FromMinutes(10));
+        await _fx.SeedDecisionsForOpenCycleAsync(new[] { "build" });
+
+        await using (var ctx = _fx.CreateContext())
+            await CycleCloser.RunAsync(ctx, _fx.World, _fx.Clock);
+
+        await using var verify = _fx.CreateContext();
+        var states = await verify.WorldStates.OrderBy(s => s.CycleId).ToListAsync();
+        states.Last().Economy.Should().BeGreaterThan(20); // out of recession
+
+        // No event should exist for cycle 3 (recession isn't holding any more, no other rule triggered).
+        var cycle3Events = await verify.Events.Where(e => e.CycleId == 3).ToListAsync();
+        cycle3Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Multi_day_catch_up_evaluates_rules_per_cycle()
+    {
+        await _fx.ResetAndSeedAsync();
+        // Set state already in recession + ecological_collapse + unrest.
+        await _fx.OverrideGenesisStateAsync(economy: 5, environment: 5, stability: 5);
+        await _fx.BackdateOpenCycleAsync(endsAtBefore: TimeSpan.FromHours(60)); // 2.5 days
+
+        await using var ctx = _fx.CreateContext();
+        await CycleCloser.RunAsync(ctx, _fx.World, _fx.Clock);
+
+        // Three cycles closed (2, 3, 4); each should have written events for all three rules
+        // (state is unchanged because cycles had zero decisions → state copies forward).
+        var events = await ctx.Events.OrderBy(e => e.CycleId).ThenBy(e => e.Type).ToListAsync();
+        events.Should().HaveCount(9);
+        events.Select(e => e.CycleId).Distinct().Should().BeEquivalentTo(new[] { 2, 3, 4 });
+        events.Select(e => e.Type).Distinct()
+            .Should().BeEquivalentTo(new[] { "recession", "ecological_collapse", "unrest" });
     }
 
     [Fact]

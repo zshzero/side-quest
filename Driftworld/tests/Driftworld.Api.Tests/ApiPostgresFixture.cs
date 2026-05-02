@@ -1,4 +1,6 @@
+using Driftworld.Core;
 using Driftworld.Data;
+using Driftworld.Data.Cycles;
 using Driftworld.Data.Entities;
 using Driftworld.Data.Seeding;
 using Microsoft.AspNetCore.Hosting;
@@ -6,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -54,6 +57,12 @@ public sealed class ApiPostgresFixture : IAsyncLifetime
                     ["Driftworld:World:Rules:recession:Variable"] = "Economy",
                     ["Driftworld:World:Rules:recession:Op"] = "Lt",
                     ["Driftworld:World:Rules:recession:Threshold"] = "20",
+                    ["Driftworld:World:Rules:ecological_collapse:Variable"] = "Environment",
+                    ["Driftworld:World:Rules:ecological_collapse:Op"] = "Lt",
+                    ["Driftworld:World:Rules:ecological_collapse:Threshold"] = "15",
+                    ["Driftworld:World:Rules:unrest:Variable"] = "Stability",
+                    ["Driftworld:World:Rules:unrest:Op"] = "Lt",
+                    ["Driftworld:World:Rules:unrest:Threshold"] = "20",
                 });
             });
 
@@ -96,6 +105,39 @@ public sealed class ApiPostgresFixture : IAsyncLifetime
         open.ClosedAt = Clock.GetUtcNow().UtcDateTime;
         await db.SaveChangesAsync();
         return open.Id;
+    }
+
+    /// <summary>Backdate the currently-open cycle so the worker sees it as due.</summary>
+    public async Task BackdateOpenCycleAsync(TimeSpan endsAtBefore)
+    {
+        using var scope = _factory!.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<DriftworldDbContext>();
+        var open = await db.Cycles.SingleAsync(c => c.Status == CycleStatus.Open);
+        var now = Clock.GetUtcNow().UtcDateTime;
+        open.EndsAt = now - endsAtBefore;
+        open.StartsAt = open.EndsAt.AddHours(-24);
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Overwrite the latest world_state's variables to set up rule-active scenarios.</summary>
+    public async Task OverrideLatestStateAsync(short economy, short environment, short stability)
+    {
+        using var scope = _factory!.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<DriftworldDbContext>();
+        var state = await db.WorldStates.OrderByDescending(s => s.CycleId).FirstAsync();
+        state.Economy = economy;
+        state.Environment = environment;
+        state.Stability = stability;
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Run the cycle-close worker through one pass.</summary>
+    public async Task<CycleCloseResult> RunCycleCloseAsync()
+    {
+        using var scope = _factory!.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<DriftworldDbContext>();
+        var world = scope.ServiceProvider.GetRequiredService<IOptions<WorldOptions>>().Value;
+        return await CycleCloser.RunAsync(db, world, Clock);
     }
 
     private sealed class FixedClock : TimeProvider

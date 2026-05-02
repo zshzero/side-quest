@@ -44,6 +44,9 @@ app.MapGet("/", () => Results.Ok(new
 var v1 = app.MapGroup("/v1");
 v1.MapUsersEndpoints();
 v1.MapDecisionsEndpoints();
+v1.MapWorldEndpoints();
+v1.MapEventsEndpoints();
+v1.MapContributionEndpoints();
 
 app.Run();
 
