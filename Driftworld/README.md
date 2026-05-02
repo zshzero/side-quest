@@ -58,8 +58,18 @@ Inserts cycle 1 (closed, all-50 genesis snapshot) and cycle 2 (open, the first c
 
 ```bash
 dotnet run --project src/Driftworld.Api
-# → http://localhost:5080  (or whatever launchSettings.json says)
+# → http://localhost:5059  (or whatever launchSettings.json says)
 ```
+
+### 4b. Advance the world (manually)
+
+```bash
+dotnet run --project src/Driftworld.Worker
+```
+
+Closes any cycle whose `ends_at` is in the past, computes a new `world_states` row from that cycle's decisions, and opens a successor. **Idempotent** — running twice when no cycle is due is a no-op. **Multi-day catch-up** — if the worker hasn't run for several days, a single invocation closes all overdue cycles in order.
+
+In production this is fired by OS-level cron / Task Scheduler (Phase 5). For local dev, invoke whenever you want to advance time.
 
 ### 5. Run tests
 
@@ -146,6 +156,6 @@ Local dev with the bundled compose file needs no override.
 | 1 — Local skeleton & data model       | ✅ done   | [phase-1-skeleton-and-data-model.md](docs/phase-1-skeleton-and-data-model.md) |
 | 1.5 — Reviewer-driven punch-list      | ✅ done   | (folded into Phase 1 doc + tests) |
 | 2 — Users & decisions endpoints       | ✅ done   | [phase-2-users-and-decisions.md](docs/phase-2-users-and-decisions.md) |
-| 3 — Cycle-close worker (manual)       | ⬜ next   | not started |
-| 4 — Events & read endpoints           | ⬜       | not started |
+| 3 — Cycle-close worker (manual)       | ✅ done   | [phase-3-cycle-close-worker.md](docs/phase-3-cycle-close-worker.md) |
+| 4 — Events & read endpoints           | ⬜ next   | not started |
 | 5 — Scheduling, polish, hand-off      | ⬜       | not started |
