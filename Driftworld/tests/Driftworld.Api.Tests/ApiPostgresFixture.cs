@@ -63,6 +63,9 @@ public sealed class ApiPostgresFixture : IAsyncLifetime
                     ["Driftworld:World:Rules:unrest:Variable"] = "Stability",
                     ["Driftworld:World:Rules:unrest:Op"] = "Lt",
                     ["Driftworld:World:Rules:unrest:Threshold"] = "20",
+                    // Effectively-unlimited in shared fixture so non-rate-limit tests don't trip the limiter.
+                    ["Driftworld:RateLimit:UserCreate:PermitLimit"] = "100000",
+                    ["Driftworld:RateLimit:UserCreate:WindowSeconds"] = "60",
                 });
             });
 

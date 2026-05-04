@@ -1,7 +1,9 @@
+using Driftworld.Api.RateLimiting;
 using Driftworld.Core.Exceptions;
 using Driftworld.Data;
 using Driftworld.Data.Entities;
 using FluentValidation;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -15,7 +17,9 @@ public static class UsersEndpoints
     public static RouteGroupBuilder MapUsersEndpoints(this RouteGroupBuilder root)
     {
         var group = root.MapGroup("/users");
-        group.MapPost("/", CreateUserAsync).WithName("CreateUser");
+        group.MapPost("/", CreateUserAsync)
+             .WithName("CreateUser")
+             .RequireRateLimiting(RateLimitPolicies.UserCreatePerIp);
         return root;
     }
 
