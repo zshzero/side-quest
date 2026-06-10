@@ -3,6 +3,9 @@ using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using NCache.Protocol;
+using NCache.Server.Commands.Infrastructure;
+using NCache.Server.Commands.StringCommands;
+using NCache.Server.Storage;
 
 // ── Configuration ───────────────────────────────────────────────────────
 var port = 6380;
@@ -38,6 +41,27 @@ Console.CancelKeyPress += (_, e) =>
     cts.Cancel();
     Log("Shutting down...");
 };
+
+// ── Build the cache + command pipeline ──────────────────────────────────
+//
+// We do this ONCE, before the accept loop, then share these instances
+// across every connected client. Both CacheStore (ConcurrentDictionary)
+// and the command handlers are designed to be safely shared across threads.
+ICacheStore store = new CacheStore();
+
+var registry = new CommandRegistry();
+registry.Register("PING",   new PingCommand());
+registry.Register("SET",    new SetCommand());
+registry.Register("GET",    new GetCommand());
+registry.Register("DEL",    new DelCommand());
+registry.Register("EXISTS", new ExistsCommand());
+registry.Register("KEYS",   new KeysCommand());
+registry.Register("DBSIZE", new DbsizeCommand());
+
+// The dispatcher is the single entry point for "RESP message in → RESP
+// response out". The exception logger is wired to the file/console logger
+// so handler crashes show up in logs/server.log alongside other events.
+var dispatcher = new CommandDispatcher(registry, ex => Log($"[handler-error] {ex}"));
 
 // ── Start listening ─────────────────────────────────────────────────────
 
@@ -97,7 +121,7 @@ try
         // _ = fires it as a background task so we can immediately loop back
         // and accept the next client. If we awaited, the server could only
         // handle one client at a time.
-        _ = HandleClientAsync(tcpClient, endpoint, cts.Token);
+        _ = HandleClientAsync(tcpClient, endpoint, dispatcher, store, cts.Token);
     }
 }
 catch (OperationCanceledException)
@@ -123,7 +147,12 @@ finally
 /// 2. Loop: read bytes → parse RESP → echo back
 /// 3. Clean up when the client disconnects or an error occurs
 /// </summary>
-async Task HandleClientAsync(TcpClient tcpClient, EndPoint? endpoint, CancellationToken ct)
+async Task HandleClientAsync(
+    TcpClient tcpClient,
+    EndPoint? endpoint,
+    CommandDispatcher dispatcher,
+    ICacheStore store,
+    CancellationToken ct)
 {
     try
     {
@@ -173,11 +202,16 @@ async Task HandleClientAsync(TcpClient tcpClient, EndPoint? endpoint, Cancellati
             // (pipelining), or a single read might contain several small messages.
             while (RespParser.TryParse(ref buffer, out RespValue? value))
             {
-                // For now: echo the parsed value back to the client.
-                // In Phase 2, this is where command dispatch will happen.
                 Log($"[{endpoint}] Received: {FormatForLog(value!)}");
 
-                RespSerializer.Write(writer, value!);
+                // Phase 2: actual command dispatch. The dispatcher validates
+                // the message shape, looks up the handler, runs it, and
+                // returns the response. Any handler exception is converted
+                // to -ERR internal error inside the dispatcher — no exception
+                // can propagate here and tear down the connection.
+                var response = dispatcher.Execute(value!, store);
+
+                RespSerializer.Write(writer, response);
                 await writer.FlushAsync(ct);
                 // FlushAsync actually sends the bytes to the client.
                 // Without it, data sits in the PipeWriter's internal buffer.
